@@ -5,6 +5,7 @@ from darkflow.net.build import TFNet
 import cv2
 import pdb
 import gc
+import sys
 
 # class Observer():
 #     _observers = []
@@ -21,8 +22,8 @@ class Detect():
     def __init__(self,numOfSect=8, padding=2):
         self.numOfSect = numOfSect
         video = "test.mp4"
-        self.video = cv2.VideoCapture(video)
-        self.tfnet = TFNet({"model": 'cfg/yolov2-tiny.cfg'  , "load": "bin/yolov2-tiny.weights", "threshold": 0.1,"gpu": 1})
+        self.video = cv2.VideoCapture(1)
+        self.tfnet = TFNet({"model": 'cfg/yolov2-tiny.cfg'  , "load": "bin/yolov2-tiny.weights", "threshold": 0.1,"gpu":1})
         if not self.video.isOpened():
             print ("Could not open video")
             sys.exit()
