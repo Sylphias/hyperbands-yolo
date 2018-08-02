@@ -1,3 +1,4 @@
+
 import numpy as np
 import cv2
 from threading import Thread
@@ -6,22 +7,21 @@ import cv2
 import pdb
 import gc
 
-# class Observer():
-#     _observers = []
-#     def __init__(self):
-#         self._observers.append(self)
-#         self._observables = {}
-#
-#     def observe(self,event_name, callback):
-#         self._observables[event_name]= callback
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
 
-# Begin by specifying a RoI to select structure bounds, uses observer pattern.
-# Break bounds into x number of sections, each of these sections will be sent to the LED side
 class Detect():
     def __init__(self,numOfSect=8, padding=2):
         self.numOfSect = numOfSect
+        self.peopleCount = 0
+        self.sectionCount = [0 for x in range(self.numOfSect)]
+        self.state = [0 for x in range(self.numOfSect)]
         video = "test.mp4"
         self.video = cv2.VideoCapture(video)
+        # self.video.set(3,352)
+        # self.video.set(4,240)
         self.tfnet = TFNet({"model": 'cfg/yolov2-tiny.cfg'  , "load": "bin/yolov2-tiny.weights", "threshold": 0.1,"gpu": 1})
         if not self.video.isOpened():
             print ("Could not open video")
@@ -41,12 +41,8 @@ class Detect():
         for x in range(numOfSect):
             topleft = (bbox[0]+x*(splitWidth) + padding*x, bbox[1])
             bottomright = (topleft[0]+splitWidth,bbox[1]+bbox[3])
-            self.bounds.append(Bounds(x,topleft,bottomright))
+            self.bounds.append(Bounds(x,topleft,bottomright,self.boundsCallback))
         self.startDetect()
-
-
-    # for b in self.bounds:
-    # cv2.rectangle(frame, b.topLeft, b.btmRight, (255,0,0), 1, 1)
 
     def startDetect(self):
         while True:
@@ -56,7 +52,7 @@ class Detect():
                 peopleCount = 0
                 for result in results:
                     if result['label']=='person':
-                        if result['confidence'] < 0.35: continue
+                        if result['confidence'] < 0.45: continue
                         result_topleft = (result['topleft']['x'],result['topleft']['y'])
                         result_btmright = (result['bottomright']['x'],result['bottomright']['y'])
                         cv2.rectangle(frame, result_topleft, result_btmright, (255,255,0), 2, 1)
@@ -71,10 +67,30 @@ class Detect():
             k = cv2.waitKey(1) & 0xff
             if k == 27 : break
 
+    def update(self):
+        data = {"u_active_{}".format(idx) : [x for x in subArr] for idx, subArr in enumerate(chunks(self.state,4)) }
+        params = {
+        	"action":"update",
+            "params": data
+        }
+        print(params)
+        # r = requests.post('http://10.12.242.219/', json =params)
+
+
+    def boundsCallback(self, sectionNum, count):
+        # Update state of lights if section number counts change or is not 0
+        if count != 0 and self.sectionCount[sectionNum] != count:
+            self.state[sectionNum] = 1.0
+        elif count == 0:
+            self.state[sectionNum] = 0.0
+
+        self.update()
+
 
 #This class will store a state of the number of people in each section. everytime this number changes, an event is fired off
 class Bounds():
-    def __init__(self, sectionNum, topLeft, btmRight):
+    def __init__(self, sectionNum, topLeft, btmRight, callback):
+        self.callback = callback
         self.sectionNum = sectionNum
         self.numPeople = 0
         self.topLeft = topLeft
@@ -93,16 +109,14 @@ class Bounds():
     def update(self,newNumPeople,frame):
         #count number of people in current frame.
         if self.numPeople < newNumPeople:
-            self.fireSection()
             cv2.rectangle(frame, self.topLeft, self.btmRight, (255,255,255), 3, 1)
         self.numPeople = newNumPeople
-
+        self.fireSection()
 
 
     def fireSection(self):
         # fires a http request to LED side to trigger an event.
-        print(str(self.sectionNum) + "Triggered")
-        return
+        self.callback(self.sectionNum,self.numPeople)
 
 
 
